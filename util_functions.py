@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import scipy.stats
 from scipy.stats import norm
+import matplotlib.pyplot as plt
 
 def get_ffme_returns(label):
     
@@ -72,6 +73,21 @@ def run_cppi(risky_r, safe_r=None, m=3, start=1000, floor=0.8, riskfree_rate=0.0
         "floor": floorval_history
     }
     return backtest_result
+
+def show_cppi_single_industry(risky_r, industry, start_date, end_date, safe_r, m, start, floor, riskfree_rate,drawdown):
+    """
+    Plot the results of CPPI with single industry portfolio
+    """
+    btr = run_cppi(risky_r[start_date:end_date][[industry]], safe_r=safe_r, m=m, start=start, floor=floor, riskfree_rate=riskfree_rate, drawdown=drawdown)
+    btr["Wealth"] = btr["Wealth"].add_suffix("_CPPI")
+    btr["Risky Wealth"] = btr["Risky Wealth"].add_suffix("_Historical")
+    btr['floor'] = btr["floor"].add_suffix("_floor")
+    fig, ax = plt.subplots(figsize=(12,8))
+    btr["Wealth"].plot(ax=ax, linestyle='-') 
+    btr["Risky Wealth"].plot(ax=ax,style=":")
+    btr['floor'].plot(ax=ax,color='r',linestyle='--')
+    plt.legend(title="Legend", loc="upper left", fontsize="medium", shadow=True)
+    plt.show()
 
 def annualize_rets(r, periods_per_year):
     """
@@ -191,3 +207,61 @@ def summary_stats(r, periods_per_year, riskfree_rate):
         "Sharpe Ratio": ann_sr,
         "Max Drawdown": dd
     })
+
+def gbm(n_years = 10, n_scenarios=1000, mu=0.07, sigma=0.15, steps_per_year=12, s_0=100.0, prices=True):
+    """
+    Evolution of Geometric Brownian Motion trajectories, such as for Stock Prices through Monte Carlo
+    :param n_years:  The number of years to generate data for
+    :param n_paths: The number of scenarios/trajectories
+    :param mu: Annualized Drift, e.g. Market Return
+    :param sigma: Annualized Volatility
+    :param steps_per_year: granularity of the simulation
+    :param s_0: initial value
+    :return: a numpy array of n_paths columns and n_years*steps_per_year rows
+    """
+    dt = 1/steps_per_year
+    n_steps = int(n_years*steps_per_year) + 1
+    rets_plus_1 = np.random.normal(loc=(1+mu)**dt, scale=(sigma*np.sqrt(dt)), size=(n_steps, n_scenarios))
+    rets_plus_1[0] = 1
+    ret_val = s_0*pd.DataFrame(rets_plus_1).cumprod() if prices else rets_plus_1-1
+    return ret_val
+
+def show_cppi(n_scenarios=50, mu=0.07, sigma=0.15, m=3, floor=0.8, riskfree_rate=0.03, steps_per_year=12, y_max=100):
+    """
+    Plot the results of a Monte Carlo Simulation of CPPI
+    """
+    start = 100
+    sim_rets = gbm(n_years=10, n_scenarios=n_scenarios, mu=mu, sigma=sigma, s_0=start, prices=False, steps_per_year=steps_per_year)
+    risky_r = pd.DataFrame(sim_rets)
+    btr = run_cppi(risky_r,safe_r=None, riskfree_rate=riskfree_rate,m=m, start=start, floor=floor, drawdown=None)
+    wealth = btr["Wealth"]
+    
+    y_max=wealth.values.max()*y_max/100
+    terminal_wealth = wealth.iloc[-1]
+    
+    tw_mean = terminal_wealth.mean()
+    tw_median = terminal_wealth.median()
+    failure_mask = np.less(terminal_wealth, start*floor)
+    n_failures = failure_mask.sum()
+    p_fail = n_failures/n_scenarios
+    
+    e_shortfall = np.dot(terminal_wealth-start*floor, failure_mask)/n_failures if n_failures > 0 else 0.0
+    
+    fig, (wealth_ax, hist_ax) = plt.subplots(nrows=1, ncols=2, sharey=True, gridspec_kw={'width_ratios':[3,2]}, figsize=(24,9))
+    plt.subplots_adjust(wspace=0.0)
+    
+    wealth.plot(ax=wealth_ax, legend=False, alpha=0.3, color="indianred")
+    wealth_ax.axhline(y=start, ls=":", color="black")
+    wealth_ax.axhline(y=start*floor, ls="--", color="red")
+    wealth_ax.set_ylim(top=y_max)
+    
+    terminal_wealth.plot.hist(ax=hist_ax, bins=50, ec='w', fc='indianred', orientation='horizontal')
+    hist_ax.axhline(y=start, ls=":", color="black")
+    hist_ax.axhline(y=tw_mean, ls=":", color="blue")
+    hist_ax.axhline(y=tw_median, ls=":", color="purple")
+    hist_ax.annotate(f"Mean: ${int(tw_mean)}", xy=(.7,.9), xycoords='axes fraction', fontsize=24)
+    hist_ax.annotate(f"Median: ${int(tw_median)}", xy=(.7,.85),xycoords='axes fraction', fontsize=24)
+    if (floor>0.01):
+        hist_ax.axhline(y=start*floor, ls="--", color="red", linewidth=3)
+        hist_ax.annotate(f"Violations: {n_failures} ({p_fail*100:2.2f}%)\nE(shortfall)=${e_shortfall:2.2f}", xy=(.7, .7), xycoords='axes fraction', fontsize=24)
+    plt.show()
