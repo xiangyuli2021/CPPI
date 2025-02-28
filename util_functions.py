@@ -265,3 +265,24 @@ def show_cppi(n_scenarios=50, mu=0.07, sigma=0.15, m=3, floor=0.8, riskfree_rate
         hist_ax.axhline(y=start*floor, ls="--", color="red", linewidth=3)
         hist_ax.annotate(f"Violations: {n_failures} ({p_fail*100:2.2f}%)\nE(shortfall)=${e_shortfall:2.2f}", xy=(.7, .7), xycoords='axes fraction', fontsize=24)
     plt.show()
+    
+def cir(n_years = 10, n_scenarios=1, a=0.05, b=0.03, sigma=0.05, steps_per_year=12, r_0=None):
+    """
+    Generate random interest rate evolution over time using the CIR model
+    b and r_0 are assumed to be the annualized rates, not the short rate
+    and the returned values are the annualized rates as well
+    """
+    if r_0 is None: r_0 = b 
+    r_0 = np.log1p(r_0)
+    dt = 1/steps_per_year
+    num_steps = int(n_years*steps_per_year) + 1 
+    
+    shock = np.random.normal(0, scale=np.sqrt(dt), size=(num_steps, n_scenarios))
+    rates = np.empty_like(shock)
+    rates[0] = r_0
+    for step in range(1, num_steps):
+        r_t = rates[step-1]
+        d_r_t = a*(b-r_t)*dt + sigma*np.sqrt(r_t)*shock[step]
+        rates[step] = abs(r_t + d_r_t) 
+        
+    return pd.DataFrame(data=np.expm1(rates), index=range(num_steps))
