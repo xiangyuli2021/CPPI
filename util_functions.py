@@ -286,3 +286,48 @@ def cir(n_years = 10, n_scenarios=1, a=0.05, b=0.03, sigma=0.05, steps_per_year=
         rates[step] = abs(r_t + d_r_t) 
         
     return pd.DataFrame(data=np.expm1(rates), index=range(num_steps))
+
+def bond_price(maturity, principal=100, coupon_rate=0.03, coupons_per_year=12, discount_rate=None):
+    """
+    Computes the price of a bond that pays regular coupons until maturity
+    at which time the principal and the final coupon is returned
+    """
+    if discount_rate is None:
+        raise ValueError("discount_rate must be provided.")
+
+    # Calculate the number of coupons and coupon amount
+    n_coupons = round(maturity * coupons_per_year)
+    coupon_amt = principal * coupon_rate / coupons_per_year
+
+    # Generate cash flows
+    coupon_times = np.arange(1, n_coupons + 1)
+    cash_flows = pd.Series(data=coupon_amt, index=coupon_times)
+    cash_flows.iloc[-1] += principal  # Add principal to the last cash flow
+
+    if isinstance(discount_rate, pd.DataFrame):
+        # Handle DataFrame of discount rates
+        pricing_dates = discount_rate.index
+        prices = pd.DataFrame(index=pricing_dates, columns=discount_rate.columns)
+
+        for t in pricing_dates:
+            # Calculate remaining maturity for each date
+            remaining_maturity = maturity - t / coupons_per_year
+            if remaining_maturity <= 0:
+                # If maturity has passed, the bond price is just the principal
+                prices.loc[t] = principal + principal*coupon_rate/coupons_per_year
+            else:
+                # Recursively calculate bond price for remaining maturity
+                prices.loc[t] = bond_price(
+                    remaining_maturity,
+                    principal,
+                    coupon_rate,
+                    coupons_per_year,
+                    discount_rate.loc[t]
+                )
+        return prices
+    else:
+        # Handle single discount rate
+        dates = cash_flows.index
+        discounts = pd.DataFrame([(1 + discount_rate / coupons_per_year) ** -i for i in dates])
+        discounts.index = dates
+        return discounts.multiply(cash_flows, axis='rows').sum()
