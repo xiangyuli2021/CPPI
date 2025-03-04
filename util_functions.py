@@ -93,7 +93,7 @@ def annualize_rets(r, periods_per_year):
     """
     Annualizes a set of returns
     """
-    compounded_growth = np.exp(np.log1p(r).sum())
+    compounded_growth = (1+r).prod()
     n_periods = r.shape[0]
     return compounded_growth**(periods_per_year/n_periods)-1
 
@@ -208,7 +208,7 @@ def summary_stats(r, periods_per_year, riskfree_rate):
         "Max Drawdown": dd
     })
 
-def gbm(n_years = 10, n_scenarios=1000, mu=0.07, sigma=0.15, steps_per_year=12, s_0=100.0, prices=True):
+def gbm(n_years, n_scenarios, mu, sigma, steps_per_year, s_0, prices=True):
     """
     Evolution of Geometric Brownian Motion trajectories, such as for Stock Prices through Monte Carlo
     :param n_years:  The number of years to generate data for
@@ -266,7 +266,7 @@ def show_cppi(n_scenarios=50, mu=0.07, sigma=0.15, m=3, floor=0.8, riskfree_rate
         hist_ax.annotate(f"Violations: {n_failures} ({p_fail*100:2.2f}%)\nE(shortfall)=${e_shortfall:2.2f}", xy=(.7, .7), xycoords='axes fraction', fontsize=24)
     plt.show()
     
-def cir(n_years = 10, n_scenarios=1, a=0.05, b=0.03, sigma=0.05, steps_per_year=12, r_0=None):
+def cir(n_years, n_scenarios, a, b, sigma, steps_per_year, r_0=None):
     """
     Generate random interest rate evolution over time using the CIR model
     b and r_0 are assumed to be the annualized rates, not the short rate
@@ -287,7 +287,7 @@ def cir(n_years = 10, n_scenarios=1, a=0.05, b=0.03, sigma=0.05, steps_per_year=
         
     return pd.DataFrame(data=np.expm1(rates), index=range(num_steps))
 
-def bond_price(maturity, principal=100, coupon_rate=0.03, coupons_per_year=12, discount_rate=None):
+def bond_price(maturity, principal, coupon_rate, coupons_per_year, discount_rate=None):
     """
     Computes the price of a bond that pays regular coupons until maturity
     at which time the principal and the final coupon is returned
@@ -331,3 +331,16 @@ def bond_price(maturity, principal=100, coupon_rate=0.03, coupons_per_year=12, d
         discounts = pd.DataFrame([(1 + discount_rate / coupons_per_year) ** -i for i in dates])
         discounts.index = dates
         return discounts.multiply(cash_flows, axis='rows').sum()
+
+def bond_total_return(monthly_prices, principal, coupon_rate, coupons_per_year):
+    '''
+    Computes the total return of a Bond based on monthly bond prices and coupon payments
+    Assumes that dividends (coupons) are paid out at the end of the period (e.g. end of 3 months for quarterly div)
+    and that dividends are reinvested in the bond
+    '''
+    coupons = pd.DataFrame(data = 0, index=monthly_prices.index, columns=monthly_prices.columns)
+    t_max = monthly_prices.index.max()
+    pay_date = np.linspace(12/coupons_per_year, t_max, int(coupons_per_year*t_max/12), dtype=int)
+    coupons.iloc[pay_date] = principal*coupon_rate/coupons_per_year
+    total_returns = (monthly_prices + coupons)/monthly_prices.shift()-1
+    return total_returns.dropna()
