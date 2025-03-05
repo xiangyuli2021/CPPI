@@ -276,7 +276,6 @@ def cir(n_years, n_scenarios, a, b, sigma, steps_per_year, r_0=None):
     r_0 = np.log1p(r_0)
     dt = 1/steps_per_year
     num_steps = int(n_years*steps_per_year) + 1 
-    
     shock = np.random.normal(0, scale=np.sqrt(dt), size=(num_steps, n_scenarios))
     rates = np.empty_like(shock)
     rates[0] = r_0
@@ -344,3 +343,15 @@ def bond_total_return(monthly_prices, principal, coupon_rate, coupons_per_year):
     coupons.iloc[pay_date] = principal*coupon_rate/coupons_per_year
     total_returns = (monthly_prices + coupons)/monthly_prices.shift()-1
     return total_returns.dropna()
+
+def fixedmix_allocator(r1, r2, w1, **kwargs):
+    return pd.DataFrame(data = w1, index = r1.index, columns=r1.columns)
+
+def bt_mix(r1, r2, allocator, **kwargs):
+    if not r1.shape == r2.shape:
+        raise ValueError("r1 and r2 should have the same shape")
+    weights = allocator(r1, r2, **kwargs)
+    if not weights.shape == r1.shape:
+        raise ValueError("Allocator returned with a different shape than the returns")
+    r_mix = weights*r1 + (1-weights)*r2
+    return r_mix
